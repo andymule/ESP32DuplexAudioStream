@@ -1,3 +1,14 @@
+ESP32 full duplex audio w UDP broadcasting
+
+uses both cores, so won't work on single core variants of ESP32 
+
+Pins used (look up your pinouts for proper GPIO):
+DAC_CHANNEL_2
+DAC_CHANNEL_1
+ADC1_CHANNEL_0
+
+==BUILD==
+
 Install PlatformIO into VSCode. Open this folder, build and upload from there very easily.
 
 -OR-
