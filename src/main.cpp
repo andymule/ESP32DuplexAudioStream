@@ -12,7 +12,7 @@
 
 #define AUDIO_BUFFER_MAX 20000
 #define AUDIO_BUFFER_TRANSMIT_PACKET_SIZE 800
-#define AUDIO_BUFFER_BUFFER_SIZE_WAIT 5000
+#define AUDIO_BUFFER_SIZE_WAIT_TO_PLAY 5000
 
 uint8_t audioMicCollectBuffer[AUDIO_BUFFER_TRANSMIT_PACKET_SIZE];
 uint8_t audioMicTransmitBuffer[AUDIO_BUFFER_TRANSMIT_PACKET_SIZE];
@@ -26,8 +26,9 @@ const char *host = "192.168.1.255"; //broadcast to subnet
 
 bool audioMicTransmitNow = false;
 
-uint8_t audioOutputNetworkBuffer[AUDIO_BUFFER_MAX];
-// uint8_t audioOutputPlaybackBuffer[AUDIO_BUFFER_MAX];
+uint8_t audioOutputNetworkBuffer[AUDIO_BUFFER_TRANSMIT_PACKET_SIZE];
+uint8_t audioOutputPlaybackBuffer[AUDIO_BUFFER_MAX];
+bool recieveBufferFull = false;
 int audioOutputReadIndex = 0, audioOutputWriteIndex = 1;
 int audioDataInPlaybackBuffer = 0;
 bool play = false;
@@ -44,9 +45,9 @@ TaskHandle_t AudioTask;
 
 void ReadMicInput()
 {
-  portENTER_CRITICAL_ISR(&timerMux);         // says that we want to run critical code and don't want to be interrupted
+  portENTER_CRITICAL_ISR(&timerMux);              // says that we want to run critical code and don't want to be interrupted
   uint16_t adcVal = adc1_get_raw(ADC1_CHANNEL_0); // reads the ADC, LOLIN32 pinout marked VP on board
-  uint8_t value = map(adcVal, 0 , 4096, 0, 255);  // converts the value to 0..255 (8bit)
+  uint8_t value = map(adcVal, 0, 4096, 0, 255);   // converts the value to 0..255 (8bit)
   // TODO transmit all 12bits for great great audio
   // adcVal = map(adcVal, 0, 4096, 0, 255); // converts the value to 0..255 (8bit)
 
@@ -61,13 +62,39 @@ void ReadMicInput()
   }
   portEXIT_CRITICAL_ISR(&timerMux); // says that we have run our critical code
 }
+void CopyToOutputBuffer(int length) // copies from network to speaker buffer
+{
+  // portENTER_CRITICAL_ISR(&timerMux);                         /// todo bad function? big block?
+  if (audioDataInPlaybackBuffer + length < AUDIO_BUFFER_MAX) // if our buffer isn't already full TODO drop oldest data instead
+  {
+    // TODO should I not do this here? Am I blocking things?
+    for (size_t i = 0; i < length; i++)
+    {
+      audioOutputPlaybackBuffer[audioOutputWriteIndex] = audioOutputNetworkBuffer[i];
+      audioOutputWriteIndex++;
+      if (audioOutputWriteIndex == AUDIO_BUFFER_MAX)
+        audioOutputWriteIndex = 0;
+    }
+    audioDataInPlaybackBuffer += length;
+  }
+  else
+  {
+    Serial.println("Buffer overflow? TOO MUCH DATA WOW");
+  }
+
+  if (audioDataInPlaybackBuffer > AUDIO_BUFFER_SIZE_WAIT_TO_PLAY)
+    play = true;
+  // Serial.print("Recv. Buffsize:");
+  // Serial.println(audioDataInPlaybackBuffer);
+  // portEXIT_CRITICAL_ISR(&timerMux); // says that we have run our critical code
+}
 void PlaybackAudio()
 {
   // Serial.println("playback");
   portENTER_CRITICAL_ISR(&timerMux); // says that we want to run critical code and don't want to be interrupted
   if (play)
   {
-    dac_output_voltage(DAC_CHANNEL_1, audioOutputNetworkBuffer[audioOutputReadIndex]); // DAC 1 is GPIO 25 on Lolin32
+    dac_output_voltage(DAC_CHANNEL_1, audioOutputPlaybackBuffer[audioOutputReadIndex]); // DAC 1 is GPIO 25 on Lolin32
 
     audioOutputReadIndex++;
     if (audioOutputReadIndex == AUDIO_BUFFER_MAX)
@@ -85,6 +112,11 @@ void PlaybackAudio()
       play = false;
     }
   }
+  if (recieveBufferFull)
+  {
+    CopyToOutputBuffer(AUDIO_BUFFER_TRANSMIT_PACKET_SIZE);
+    recieveBufferFull = false;
+  }
   portEXIT_CRITICAL_ISR(&timerMux); // says that we have run our critical code
 }
 void IRAM_ATTR MicInterupt()
@@ -97,11 +129,11 @@ void IRAM_ATTR PlaybackInterupt()
 }
 void AudioCore(void *pvParameters)
 {
-  mictimer = timerBegin(1, 80, true);                           // 80 Prescaler, hw timer 1
-  playbacktimer = timerBegin(0, 80, true);                      // 80 Prescaler, hw timer 0
+  mictimer = timerBegin(1, 80, true);                           // 80 Prescaler, hw timer 1. makes timer have 1us scale
+  playbacktimer = timerBegin(0, 80, true);                      // 80 Prescaler, hw timer 0. makes timer have 1us scale
   timerAttachInterrupt(mictimer, &MicInterupt, true);           // binds the handling function to our timer
   timerAttachInterrupt(playbacktimer, &PlaybackInterupt, true); // binds the handling function to our timer
-  timerAlarmWrite(mictimer, 125, true);
+  timerAlarmWrite(mictimer, 125, true);       // wake every 125us AKA 8khz sampling rate
   timerAlarmWrite(playbacktimer, 125, true);
   timerAlarmEnable(mictimer);
   timerAlarmEnable(playbacktimer);
@@ -112,7 +144,6 @@ void AudioCore(void *pvParameters)
   }
 }
 /////////// END Audio Code ///////////
-
 void setup()
 {
 
@@ -151,27 +182,11 @@ void setup()
   udpRec.onPacket([](AsyncUDPPacket packet) { // CANNOT insert a function here that references packet directly, will cause dereft bug/crash
     size_t length = packet.length();
     uint8_t *data = packet.data();
-
-    if (audioDataInPlaybackBuffer + length < AUDIO_BUFFER_MAX) // if our buffer isn't already full TODO drop oldest data
-    {
-      // TODO should I not do this here? Am I blocking network?
-      for (size_t i = 0; i < length; i++)
-      {
-        audioOutputNetworkBuffer[audioOutputWriteIndex] = data[i];
-        audioOutputWriteIndex++;
-        if (audioOutputWriteIndex == AUDIO_BUFFER_MAX)
-          audioOutputWriteIndex = 0;
-      }
-      audioDataInPlaybackBuffer += length;
-    }
-    else {
-       Serial.println("Buffer overflow? TOO MUCH DATA WOW");
-    }
-
-    if (audioDataInPlaybackBuffer > AUDIO_BUFFER_BUFFER_SIZE_WAIT)
-      play = true;
-    Serial.print("Recv. Buffsize:");
-    Serial.println(audioDataInPlaybackBuffer);
+    memcpy(audioOutputNetworkBuffer, data, length);
+    if (recieveBufferFull)
+      Serial.println("Network backup detected -- packet dropped");
+    recieveBufferFull = true;
+    // CopyToOutputBuffer(length);
   });
   /// end recv function
 
@@ -200,10 +215,10 @@ void loop()
 {
   if (audioMicTransmitNow)
   { // checks if the buffer is full and sends if so
+    udpSend.broadcastTo(audioMicTransmitBuffer, AUDIO_BUFFER_TRANSMIT_PACKET_SIZE, portsend);
     audioMicTransmitNow = false;
-    udpSend.broadcastTo(audioMicCollectBuffer, AUDIO_BUFFER_TRANSMIT_PACKET_SIZE, portsend);
-    Serial.print("Sent. Buffsize:");
-    Serial.println(audioDataInPlaybackBuffer);
+    // Serial.print("Sent. Buffsize:");
+    // Serial.println(audioDataInPlaybackBuffer);
   }
   GenNoiseDAC2(); // test tool for closed loop noise test
 }
