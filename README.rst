@@ -7,6 +7,8 @@ DAC_CHANNEL_2
 DAC_CHANNEL_1
 ADC1_CHANNEL_0
 
+Currently, shit noise is generated on DAC_CHANNEL_2. I connect this to my ADC1_CHANNEL_0 for simulating a mic input. This is broadcast to 192.168.1.255 subgroup on port 4444. I include python file that listens to this data and broadcasts it straight back to 192.168.1.255 port 4445. The ESP32 takes this data, fills an audio buffer, and plays it on DAC_CHANNEL_1
+
 ==BUILD==
 
 Install PlatformIO into VSCode. Open this folder, build and upload from there very easily.
