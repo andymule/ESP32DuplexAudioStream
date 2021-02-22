@@ -16,6 +16,12 @@ cs = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
 cs.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
 cs.setsockopt(socket.SOL_SOCKET, socket.SO_BROADCAST, 1)
 
+counter = 0
+
 while True:
   a = sock.recv(1600)
   cs.sendto(a, ('192.168.1.255', 4445))
+  print(len(a))
+  counter += 1
+  if counter % 10 == 0:
+    print("+SECOND")
