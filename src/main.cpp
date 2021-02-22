@@ -17,6 +17,7 @@
 uint8_t audioMicCollectBuffer[AUDIO_BUFFER_TRANSMIT_PACKET_SIZE];
 uint8_t audioMicTransmitBuffer[AUDIO_BUFFER_TRANSMIT_PACKET_SIZE];
 int audioMicBufferIndex = 0;
+int debugpacketcounter = 0;
 
 const char *ssid = "Peas For Our Time";
 const char *password = "lovenotwar";
@@ -45,7 +46,6 @@ TaskHandle_t AudioTask;
 
 void ReadMicInput()
 {
-  portENTER_CRITICAL_ISR(&timerMux);              // says that we want to run critical code and don't want to be interrupted
   uint16_t adcVal = adc1_get_raw(ADC1_CHANNEL_0); // reads the ADC, LOLIN32 pinout marked VP on board
   uint8_t value = map(adcVal, 0, 4096, 0, 255);   // converts the value to 0..255 (8bit)
   // TODO transmit all 12bits for great great audio
@@ -56,11 +56,12 @@ void ReadMicInput()
 
   if (audioMicBufferIndex == AUDIO_BUFFER_TRANSMIT_PACKET_SIZE)
   { // when the buffer is full
+    portENTER_CRITICAL_ISR(&timerMux);              // says that we want to run critical code and don't want to be interrupted
     audioMicBufferIndex = 0;
     memcpy(audioMicTransmitBuffer, audioMicCollectBuffer, AUDIO_BUFFER_TRANSMIT_PACKET_SIZE); // copy buffer into a second buffer
     audioMicTransmitNow = true;                                                               // sets the value true so we know that we can transmit now
+    portEXIT_CRITICAL_ISR(&timerMux); // says that we have run our critical code
   }
-  portEXIT_CRITICAL_ISR(&timerMux); // says that we have run our critical code
 }
 void CopyToOutputBuffer(int length) // copies from network to speaker buffer
 {
@@ -105,10 +106,13 @@ void PlaybackAudio()
     audioDataInPlaybackBuffer -= 1;
     if (audioDataInPlaybackBuffer == 0)
     {
-      Serial.print("Buffer underrun!!! writeP,readp:");
+      Serial.print("Buffer underrun!!! writeP,readp,packets:");
       Serial.print(audioOutputWriteIndex);
       Serial.print(" ");
-      Serial.println(audioOutputReadIndex);
+      Serial.print(audioOutputReadIndex);
+      Serial.print(" ");
+      Serial.println(debugpacketcounter);
+      debugpacketcounter = 0;
       play = false;
     }
   }
@@ -140,7 +144,7 @@ void AudioCore(void *pvParameters)
 
   while (true)
   {
-    delay(1000); // keeps watchdog from triggering but essentially useless since we're all on interupts on the audio core
+    delay(4900); // keeps watchdog from triggering but essentially useless since we're all on interupts on the audio core
   }
 }
 /////////// END Audio Code ///////////
@@ -182,6 +186,7 @@ void setup()
   udpRec.onPacket([](AsyncUDPPacket packet) { // CANNOT insert a function here that references packet directly, will cause dereft bug/crash
     size_t length = packet.length();
     uint8_t *data = packet.data();
+    ++debugpacketcounter;
     memcpy(audioOutputNetworkBuffer, data, length);
     if (recieveBufferFull)
       Serial.println("Network backup detected -- packet dropped");
