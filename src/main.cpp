@@ -69,7 +69,7 @@ void CopyToOutputBuffer(int length) // copies from network to speaker buffer
   if (audioDataInPlaybackBuffer + length < AUDIO_BUFFER_MAX) // if our buffer isn't already full TODO drop oldest data instead
   {
     // TODO should I not do this here? Am I blocking things?
-    for (size_t i = 0; i < length; i++)
+    for (int i = 0; i < length; i++)
     {
       audioOutputPlaybackBuffer[audioOutputWriteIndex] = audioOutputNetworkBuffer[i];
       audioOutputWriteIndex++;
@@ -133,11 +133,13 @@ void IRAM_ATTR PlaybackInterupt()
 }
 void AudioCore(void *pvParameters)
 {
-  mictimer = timerBegin(1, 80, true);                           // 80 Prescaler, hw timer 1. makes timer have 1us scale
-  playbacktimer = timerBegin(0, 80, true);                      // 80 Prescaler, hw timer 0. makes timer have 1us scale
+  mictimer = timerBegin(0, 80, true);                           // 80 Prescaler, hw timer 1. makes timer have 1us scale
+  //playbacktimer = timerBegin(0, 80, true);                      // 80 Prescaler, hw timer 0. makes timer have 1us scale
+  playbacktimer = timerBegin(1, 80, true);                      // 240 Prescaler, hw timer 0. makes timer have 1us scale?
   timerAttachInterrupt(mictimer, &MicInterupt, true);           // binds the handling function to our timer
   timerAttachInterrupt(playbacktimer, &PlaybackInterupt, true); // binds the handling function to our timer
   timerAlarmWrite(mictimer, 125, true);       // wake every 125us AKA 8khz sampling rate
+  //timerAlarmWrite(playbacktimer, 125, true);
   timerAlarmWrite(playbacktimer, 125, true);
   timerAlarmEnable(mictimer);
   timerAlarmEnable(playbacktimer);
@@ -147,6 +149,8 @@ void AudioCore(void *pvParameters)
     delay(4900); // keeps watchdog from triggering but essentially useless since we're all on interupts on the audio core
   }
 }
+
+// int DEBUGCOUNTER = 0;
 /////////// END Audio Code ///////////
 void setup()
 {
@@ -183,14 +187,27 @@ void setup()
   udpRec.listen(portrecv);
 
   // long gross recvieve function
+
   udpRec.onPacket([](AsyncUDPPacket packet) { // CANNOT insert a function here that references packet directly, will cause dereft bug/crash
     size_t length = packet.length();
     uint8_t *data = packet.data();
     ++debugpacketcounter;
-    memcpy(audioOutputNetworkBuffer, data, length);
+    // portENTER_CRITICAL_ISR(&timerMux); // says that we want to run critical code and don't want to be interrupted
     if (recieveBufferFull)
       Serial.println("Network backup detected -- packet dropped");
-    recieveBufferFull = true;
+    else
+    {
+      memcpy(audioOutputNetworkBuffer, data, length);
+      recieveBufferFull = true;
+    }
+    // portEXIT_CRITICAL_ISR(&timerMux); // says that we have run our critical code
+    // Serial.println(DEBUGCOUNTER);
+    // ++DEBUGCOUNTER;
+    // if (DEBUGCOUNTER % 10 == 0)
+    // {
+    //   // DEBUGCOUNTER = 0;
+    //   Serial.println("second");
+    // }
     // CopyToOutputBuffer(length);
   });
   /// end recv function
