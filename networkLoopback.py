@@ -1,6 +1,3 @@
-# mostly copy/pasted code for reading broadcast usp messages and sending them back to the ESP32
-# TODO is this code fine?
-
 import socket
 import struct
 
@@ -8,21 +5,20 @@ import numpy as np
 import time
 
 import wave
+# import simpleaudio as sa
 
 sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM, socket.IPPROTO_UDP)
 sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
 sock.bind(('', 4444))
-# wrong: mreq = struct.pack("sl", socket.inet_aton("224.51.105.104"), socket.INADDR_ANY)
 mreq = struct.pack("=4sl", socket.inet_aton("224.51.105.104"), socket.INADDR_ANY)
 
 sock.setsockopt(socket.IPPROTO_IP, socket.IP_ADD_MEMBERSHIP, mreq)
 
 cs = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-# cs.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-# cs.setsockopt(socket.SOL_SOCKET, socket.SO_BROADCAST, 1)
 
 counter = 0
 
+# only used if we want to send noise data as a test
 noise = []
 while len(noise) < 800:
   noise.append(np.uint8(0))
@@ -35,18 +31,18 @@ if False:
     time.sleep(.1) #send 10 packets or 800 samples per second, 8khz 8bit audio wow
     cs.sendto(bytearray(noise), ('192.168.1.137', 4445))
 
-#This code will loop and stream a test 8k8bit wav file
+# This code will stream a looping test 8k8bit wav file
 if True:
   wav = wave.Wave_read("8bit8k.wav")
   while True:
     if wav.tell() + 800 > wav.getnframes(): #might drop some frames, but is a test
       wav.rewind()
     wavbytes = wav.readframes(800)
-    print(wav.tell())
-    time.sleep(.1) #send 10 packets or 800 samples per second, 8khz 8bit audio wow
+    # play_obj = sa.play_buffer(wavbytes, 1, 1, 8000) #uncomment to play test wav locally
     cs.sendto(wavbytes, ('192.168.1.137', 4445))
+    time.sleep(.1) #send 10 packets or 800 samples per second, 8khz 8bit audio wow
 
-# network loopback to ESP32
+# will take data from ESP and loopback back to it
 while True:
   a = sock.recv(1600)
   cs.sendto(a, ('192.168.1.137', 4445))

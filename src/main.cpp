@@ -106,6 +106,7 @@ void PlaybackAudio()
     audioDataInPlaybackBuffer -= 1;
     if (audioDataInPlaybackBuffer == 0)
     {
+      // TODO this still happens rarely, should switch to a TCP protocol?
       Serial.print("Buffer underrun!!! writeP,readp,packets:");
       Serial.print(audioOutputWriteIndex);
       Serial.print(" ");
