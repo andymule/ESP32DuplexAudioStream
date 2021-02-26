@@ -10,9 +10,9 @@
 #include <driver/adc.h>
 #include <driver/dac.h>
 
-#define AUDIO_BUFFER_MAX 20000
-#define AUDIO_BUFFER_TRANSMIT_PACKET_SIZE 800
-#define AUDIO_BUFFER_SIZE_WAIT_TO_PLAY 5000
+#define AUDIO_BUFFER_MAX 8000 // maximum allowable audio playback buffer
+#define AUDIO_BUFFER_TRANSMIT_PACKET_SIZE 800 // how many samples to capture before transmitting 
+#define AUDIO_BUFFER_SIZE_WAIT_TO_PLAY 800 // how many packets to buffer before playback starts
 
 uint8_t audioMicCollectBuffer[AUDIO_BUFFER_TRANSMIT_PACKET_SIZE];
 uint8_t audioMicTransmitBuffer[AUDIO_BUFFER_TRANSMIT_PACKET_SIZE];
@@ -21,7 +21,7 @@ int debugpacketcounter = 0;
 
 const char *ssid = "Peas For Our Time";
 const char *password = "lovenotwar";
-const char *host = "192.168.1.255"; //broadcast to subnet
+const char *host = "192.168.1.255"; //broadcast to subnet audio data to 
 #define portsend 4444
 #define portrecv 4445
 
@@ -49,7 +49,6 @@ void ReadMicInput()
   uint16_t adcVal = adc1_get_raw(ADC1_CHANNEL_0); // reads the ADC, LOLIN32 pinout marked VP on board
   uint8_t value = map(adcVal, 0, 4096, 0, 255);   // converts the value to 0..255 (8bit)
   // TODO transmit all 12bits for great great audio
-  // adcVal = map(adcVal, 0, 4096, 0, 255); // converts the value to 0..255 (8bit)
 
   audioMicCollectBuffer[audioMicBufferIndex] = value; // stores the value
   audioMicBufferIndex++;
@@ -65,10 +64,8 @@ void ReadMicInput()
 }
 void CopyToOutputBuffer(int length) // copies from network to speaker buffer
 {
-  // portENTER_CRITICAL_ISR(&timerMux);                         /// todo bad function? big block?
   if (audioDataInPlaybackBuffer + length < AUDIO_BUFFER_MAX) // if our buffer isn't already full TODO drop oldest data instead
   {
-    // TODO should I not do this here? Am I blocking things?
     for (int i = 0; i < length; i++)
     {
       audioOutputPlaybackBuffer[audioOutputWriteIndex] = audioOutputNetworkBuffer[i];
@@ -85,14 +82,16 @@ void CopyToOutputBuffer(int length) // copies from network to speaker buffer
 
   if (audioDataInPlaybackBuffer > AUDIO_BUFFER_SIZE_WAIT_TO_PLAY)
     play = true;
-  // Serial.print("Recv. Buffsize:");
-  // Serial.println(audioDataInPlaybackBuffer);
-  // portEXIT_CRITICAL_ISR(&timerMux); // says that we have run our critical code
 }
 void PlaybackAudio()
 {
-  // Serial.println("playback");
-  portENTER_CRITICAL_ISR(&timerMux); // says that we want to run critical code and don't want to be interrupted
+  if (recieveBufferFull)
+  {
+    portENTER_CRITICAL_ISR(&timerMux); // says that we want to run critical code and don't want to be interrupted
+    CopyToOutputBuffer(AUDIO_BUFFER_TRANSMIT_PACKET_SIZE);
+    recieveBufferFull = false;
+    portEXIT_CRITICAL_ISR(&timerMux); // says that we have run our critical code
+  }
   if (play)
   {
     dac_output_voltage(DAC_CHANNEL_1, audioOutputPlaybackBuffer[audioOutputReadIndex]); // DAC 1 is GPIO 25 on Lolin32
@@ -106,7 +105,7 @@ void PlaybackAudio()
     audioDataInPlaybackBuffer -= 1;
     if (audioDataInPlaybackBuffer == 0)
     {
-      // TODO this still happens rarely, should switch to a TCP protocol?
+      // TODO this still happens rarely, should switch to a TCP protocol? Or bad parallel work?
       Serial.print("Buffer underrun!!! writeP,readp,packets:");
       Serial.print(audioOutputWriteIndex);
       Serial.print(" ");
@@ -117,12 +116,6 @@ void PlaybackAudio()
       play = false;
     }
   }
-  if (recieveBufferFull)
-  {
-    CopyToOutputBuffer(AUDIO_BUFFER_TRANSMIT_PACKET_SIZE);
-    recieveBufferFull = false;
-  }
-  portEXIT_CRITICAL_ISR(&timerMux); // says that we have run our critical code
 }
 void IRAM_ATTR MicInterupt()
 {
@@ -135,13 +128,11 @@ void IRAM_ATTR PlaybackInterupt()
 void AudioCore(void *pvParameters)
 {
   mictimer = timerBegin(0, 80, true);                           // 80 Prescaler, hw timer 1. makes timer have 1us scale
-  //playbacktimer = timerBegin(0, 80, true);                      // 80 Prescaler, hw timer 0. makes timer have 1us scale
-  playbacktimer = timerBegin(1, 80, true);                      // 240 Prescaler, hw timer 0. makes timer have 1us scale?
+  playbacktimer = timerBegin(1, 80, true);                      // 80 Prescaler, hw timer 0. makes timer have 1us scale?
   timerAttachInterrupt(mictimer, &MicInterupt, true);           // binds the handling function to our timer
   timerAttachInterrupt(playbacktimer, &PlaybackInterupt, true); // binds the handling function to our timer
   timerAlarmWrite(mictimer, 125, true);       // wake every 125us AKA 8khz sampling rate
-  //timerAlarmWrite(playbacktimer, 125, true);
-  timerAlarmWrite(playbacktimer, 125, true);
+  timerAlarmWrite(playbacktimer, 125, true);  // same playback rate as capture -- could be independent though
   timerAlarmEnable(mictimer);
   timerAlarmEnable(playbacktimer);
 
@@ -166,9 +157,6 @@ void setup()
 
   dac_output_enable(DAC_CHANNEL_1);
   dac_output_enable(DAC_CHANNEL_2);
-
-  // pinMode(33, INPUT_PULLUP);
-  // pinMode(32, INPUT_PULLUP);
 
   Serial.println("connecting to wifi");
   while (WiFi.status() != WL_CONNECTED)
