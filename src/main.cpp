@@ -46,7 +46,7 @@ TaskHandle_t AudioTask;
 
 void ReadMicInput()
 {
-  uint16_t adcVal = adc1_get_raw(ADC1_CHANNEL_0); // reads the ADC, LOLIN32 pinout marked VP on board
+  uint16_t adcVal = adc1_get_raw(ADC1_CHANNEL_0); // reads the ADC, LOLIN32 pinout marked VP on board, GPIO36
   uint8_t value = map(adcVal, 0, 4096, 0, 255);   // converts the value to 0..255 (8bit)
   // TODO transmit all 12bits for great great audio
 
@@ -169,7 +169,7 @@ void setup()
   Serial.println(WiFi.localIP());
 
   adc1_config_width(ADC_WIDTH_12Bit);                       // configure the analogue to digital converter
-  adc1_config_channel_atten(ADC1_CHANNEL_0, ADC_ATTEN_0db); // connects the ADC 1 with channel 0 (GPIO 36)
+  adc1_config_channel_atten(ADC1_CHANNEL_0, ADC_ATTEN_0db); // connects the ADC 1 with channel 0 (GPIO 36, VP pin LOLIN32)
 
   udpSend.connect(IPAddress(192, 168, 1, 255), portsend); // have to initialize to use
 
@@ -217,9 +217,9 @@ void GenNoiseDAC2()
 {
   noiseflip = !noiseflip;
   if (noiseflip)
-    dac_output_voltage(DAC_CHANNEL_2, 0); // DAC 2 is GPIO 25 on Lolin32
+    dac_output_voltage(DAC_CHANNEL_2, 0); // DAC 2 is GPIO 26 on Lolin32
   else
-    dac_output_voltage(DAC_CHANNEL_2, 255); // DAC 2 is GPIO 25 on Lolin32, 255 is 8 bit max signal
+    dac_output_voltage(DAC_CHANNEL_2, 255); // DAC 2 is GPIO 26 on Lolin32, 255 is 8 bit max signal
 }
 
 void loop()

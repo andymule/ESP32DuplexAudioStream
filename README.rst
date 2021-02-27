@@ -4,11 +4,11 @@ uses both cores, so won't work on single core variants of ESP32
 
 Pins used (look up your pinouts for proper GPIO):
 
-DAC_CHANNEL_2
+DAC_CHANNEL_2 -- generate test noise -- LOLIN32 GPIO26
 
-DAC_CHANNEL_1
+DAC_CHANNEL_1 --  Acutual Speaker data analog output -- LOLIN32 GPIO25
 
-ADC1_CHANNEL_0
+ADC1_CHANNEL_0 -- Read mic input, analog in -- LOLIN32 GPIO36, labelled VP pin
 
 Currently, shit noise is generated on DAC_CHANNEL_2. I connect this to my ADC1_CHANNEL_0 for simulating a mic input. This is broadcast to 192.168.1.255 subgroup on port 4444. I include python file that listens to this data and broadcasts it straight back to 192.168.1.255 port 4445. The ESP32 takes this data, fills an audio buffer, and plays it on DAC_CHANNEL_1
 
