@@ -1,5 +1,4 @@
 /* Duplex ESP32 audio streamer 
- * Started by Julian Schroeter, modified by Andy Muehlhausen 
 */
 
 // TODO would be great to read and fill mic buffer from the ULP just bc its sitting there and should be fast enough
